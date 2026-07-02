@@ -1,42 +1,257 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-</head>
+<meta charset="UTF-8">
+<title>五子棋 Minimax博弈AI（周边候选点优化）</title>
 <style>
-    p{
-        text-indent : 64px;
-        font-size: 32px;
-    }
-    h1{
-        font-size: 40px;
-    }
-    img{
-        width:90%;
-    }
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
+body{background:#f5f5f5;display:flex;flex-direction:column;align-items:center;padding:20px}
+h1{margin-bottom:10px;color:#333}
+.info{margin-bottom:15px;font-size:16px;color:#666}
+#board{
+  width:600px;height:600px;background:#e39265;
+  display:grid;grid-template-columns:repeat(15,1fr);
+  border:2px solid #222;
+}
+.cell{
+  border:1px solid #333;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+}
+.black{
+  width:80%;height:80%;border-radius:50%;background:#222;
+}
+.white{
+  width:80%;height:80%;border-radius:50%;background:#eee;box-shadow:0 0 3px #999;
+}
+.btn-group{margin-top:20px}
+button{padding:8px 20px;font-size:16px;cursor:pointer}
+.win-tip{font-size:22px;color:red;margin:10px 0;height:30px}
 </style>
+</head>
 <body>
-    <h1 align="center">中原工学校简介</h1>
-    <img src="https://www.zut.edu.cn/__local/4/EF/09/07064E36FF67713CA36B41D58F3_BB161935_516D1.jpg">
-    <article><p>中原工学院是一所以工为主，以电子信息、人工智能和织物电子为特色优势，多学科协调发展的河南省特色骨干学科建设高校。学校始建于1955年，是原纺织工业部八所部属本科院校之一，1987年在郑州纺织机电专科学校的基础上建立郑州纺织工学院，1998年划转河南省管理，2000年更名为中原工学院，2003年获批硕士学位授权单位，2018年获批河南省博士授予立项建设单位，2025年获批河南省博士学位授予重点立项建设单位。</p>
+<h1>五子棋 Minimax博弈AI（优化候选落子点）</h1>
+<div class="info">AI只在棋子周边落子，不会乱跑边角，2层深度预判攻防</div>
+<div class="win-tip" id="tip"></div>
+<div id="board"></div>
+<div class="btn-group">
+  <button onclick="resetGame()">重新开局</button>
+</div>
 
-<p>学校设有自动化与电气工程学院、信息与通信工程学院、集成电路学院、人工智能学院、网络空间安全学院、智能感知与仪器学院、智能纺织与织物电子学院、智能机电工程学院（工业设计学院）、智能服饰与服装学院等24个教学院（部），75个本科专业。目前，全日制在校生22529人，其中本科生20103名，硕士研究生2426名。现有教职工1893人，其中专任教师1490人，高级职称教师626人，博士学位教师777人。其中，教育部“长江学者奖励计划”特聘教授、国家杰出青年科学基金获得者等高水平领军人才9人，享受国务院、河南省政府特殊津贴专家8人，全国优秀教师、省特聘教授、省杰出专业技术人才、中原科技创新领军人才、省高层次人才、省学术技术带头人、省级教学名师、优秀教师等47人次。</p>
+<script>
+const SIZE = 15;
+let board = Array(SIZE).fill().map(()=>Array(SIZE).fill(0)); // 0空 1玩家黑 2AI白
+let gameOver = false;
+const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+const MAX_DEPTH = 2;
+const SEARCH_RANGE = 2; // 只搜索已有棋子周围2格范围
 
-<p>学校现有控制科学与工程、信息与通信工程、计算机科学与技术、网络空间安全等17个一级学科硕士学位授权点，电子信息、能源动力等21个硕士专业学位授权类别。电子信息、软件工程等9个学科获批新一轮河南省重点学科。“智能与航空信息技术”“智慧新能源”和“纺织服装新材料及高端装备”3个学科群入选河南省特色骨干学科群。</p>
+// 渲染棋盘
+function renderBoard(){
+  const dom = document.getElementById('board');
+  dom.innerHTML = '';
+  for(let y=0;y<SIZE;y++){
+    for(let x=0;x<SIZE;x++){
+      const div = document.createElement('div');
+      div.className = 'cell';
+      div.dataset.x = x;
+      div.dataset.y = y;
+      if(board[y][x] === 1){
+        div.innerHTML = '<div class="black"></div>'
+      }else if(board[y][x] === 2){
+        div.innerHTML = '<div class="white"></div>'
+      }
+      div.onclick = ()=>clickCell(x,y);
+      dom.appendChild(div);
+    }
+  }
+}
 
-<p>学校以提升人才培养质量为核心，努力建设一流本科教育。2024年通过教育部本科教育教学审核评估。计算机科学与技术、材料科学与工程、纺织工程等5个专业通过工程教育专业认证（评估）。在近两届教学成果奖评选中，获得省级教学成果奖特等奖8项，一等奖24项。拥有国家级、省级特色专业18个，国家级、省级一流本科专业建设点27个，国家级、省级一流本科课程91门，省级课程思政样板课24门，国家级、省级专业综合改革试点11个，省级实验教学示范中心、虚拟仿真实验教学中心等12个，省级教学团队、优秀基层教学组织、虚拟教研室、课程思政教学团队等44个。</p>
+// 玩家点击落子
+function clickCell(x,y){
+  if(gameOver || board[y][x]!==0) return;
+  board[y][x] = 1;
+  renderBoard();
+  if(checkWin(x,y,1)){
+    gameOver = true;
+    document.getElementById('tip').innerText = '🎉 黑棋（玩家）获胜！';
+    return;
+  }
+  setTimeout(aiMinimaxDrop, 300);
+}
 
-<p>学校积极探索“以赛促学，以赛促能”的人才培养模式，是全国第二批深化创新创业教育改革示范高校。工业设计学院获批为省级重点支持建设的设计学院。在全国普通高校大学生竞赛八轮总榜单中，学校居第118名、河南省第5名；2023年全国普通高校大学生竞赛榜单中居第76名、河南省第2名。学校是连续9届夺得全国大学生工程实践与创新能力大赛最高奖的3所高校之一。2017年以来，全国大学生电子设计大赛国家奖总数连续五届居河南省本科组高校第1名，2025年居全国第7名。2023年以来，全国大学生智能汽车竞赛总决赛，国家奖总数连续三届居河南省第1名，2025年居全国第6名。</p>
+// 判断单点位是否连成五子
+function checkWin(x,y,val, b=board){
+  for(let [dx,dy] of dirs){
+    let count = 1;
+    let nx=x+dx, ny=y+dy;
+    while(nx>=0&&nx<SIZE&&ny>=0&&ny<SIZE&&b[ny][nx]===val){count++;nx+=dx;ny+=dy}
+    nx=x-dx; ny=y-dy;
+    while(nx>=0&&nx<SIZE&&ny>=0&&ny<SIZE&&b[ny][nx]===val){count++;nx-=dx;ny-=dy}
+    if(count>=5) return true;
+  }
+  return false;
+}
 
-<p>学校现有先进纺织装备技术省部共建协同创新中心、河南省智能信息技术协同创新中心、河南省智能云控制技术工程研究中心等39个国家级和省部级科研平台。拥有河南省首批工业训练中心和大学科技园。入选首批河南省高校知识产权运营管理中心、河南省专利导航基地、河南省高校科技成果转化和技术转移基地，多次获评“河南省高校知识产权综合能力十强十快高校”。近五年，承担各类科研项目2600余项，其中国家级科研项目102项，省部级科研项目539项，年均入校科研经费超1.27亿元。获省（部）级以上科研成果奖61项。国家科学技术进步奖二等奖2项，国家技术发明奖二等奖1项。授权国家各类专利946项；发表SCI、SSCI、EI、CSSCI等收录论文1200余篇。工程学、材料科学、化学3个学科进入ESI世界前1%。</p>
+// 获取【有效候选落子点】：只在已有棋子周边2格内
+function getValidPoints(){
+  let points = new Set();
+  // 遍历整个棋盘找出所有棋子
+  for(let y=0;y<SIZE;y++){
+    for(let x=0;x<SIZE;x++){
+      if(board[y][x] !== 0){
+        // 遍历棋子周围SEARCH_RANGE格范围
+        for(let dy=-SEARCH_RANGE; dy<=SEARCH_RANGE; dy++){
+          for(let dx=-SEARCH_RANGE; dx<=SEARCH_RANGE; dx++){
+            let nx = x+dx;
+            let ny = y+dy;
+            if(nx>=0 && nx<SIZE && ny>=0 && ny<SIZE && board[ny][nx]===0){
+              points.add(`${nx},${ny}`);
+            }
+          }
+        }
+      }
+    }
+  }
+  // 转成坐标数组
+  let res = [];
+  points.forEach(str=>{
+    let [x,y] = str.split(',').map(Number);
+    res.push({x,y});
+  });
+  // 空棋盘开局默认落中心
+  if(res.length === 0){
+    res.push({x:7,y:7});
+  }
+  return res;
+}
 
-<p>学校是河南最早开展中外合作办学项目的高校之一，是教育部认定的全国首批200所具有接受外国留学生资格的高等院校之一。自2002年开始，先后与英国曼彻斯特大学等国外著名高校签署联合培养博士项目，与德国埃森经济应用技术大学等国外著名高校签署联合培养硕士项目，与曼彻斯特大学等国外著名高校合作举办本科层次中外合作办学项目。与俄罗斯联邦圣彼得堡国立宇航仪器制造大学合作设立中原工学院中原彼得堡航空学院。在泰国格乐大学设立海外分校——中原工学院轩辕学院。主动对接国家重大战略，招收15个“一带一路”共建国家的优秀外国留学生来华学习，培养规模和质量逐年提升。学校是中国高等教育学会中外合作办学研究分会常务理事单位、是首届河南省高校交通教育联盟理事长单位，先后获河南省引进国外智力工作先进集体和河南省教育外事工作优秀集体。</p>
+// 获取盘面整体评分（AI视角：越高对AI越有利）
+function evalBoard(b){
+  let total = 0;
+  for(let y=0;y<SIZE;y++){
+    for(let x=0;x<SIZE;x++){
+      if(b[y][x] === 2) total += getPointScore(x,y,2,b);
+      else if(b[y][x] === 1) total -= getPointScore(x,y,1,b);
+    }
+  }
+  return total;
+}
 
-学校始终坚持以习近平新时代中国特色社会主义思想为指导，全面贯彻党的教育方针，落实立德树人根本任务，以党的建设高质量引领保障事业高质量发展。站在新的历史起点上，全校上下正在认真学习贯彻《教育强国建设规划纲要（2024—2035年）》，贯彻落实“两高四着力”重要要求，围绕河南电子科技大学申报设置和博士学位授权单位建设工作主线，笃行实干，奋勇争先，为把学校建设成为国内先进、特色鲜明的高水平应用研究型工科大学而努力奋斗！（2025年12月更新）
-<video src="D:\zuomian\lianxi\64664aa6e029f78794871c7454d3f98c.mp4" controls autoplay muted></video>
+// 单个点位棋型打分
+function getPointScore(x,y,player,b){
+  let score = 0;
+  for(let [dx,dy] of dirs){
+    score += getDirScore(x,y,dx,dy,player,b);
+  }
+  return score;
+}
 
-</article>
+function getDirScore(x,y,dx,dy,player,b){
+  let cnt=0, block=0, space=false;
+  let nx=x+dx, ny=y+dy;
+  while(nx>=0&&nx<SIZE&&ny>=0&&ny<SIZE){
+    if(b[ny][nx]===player) cnt++;
+    else if(b[ny][nx]===3-player){ block++; break; }
+    else { space=true; break; }
+    nx+=dx; ny+=dy;
+  }
+  if(nx<0||nx>=SIZE||ny<0||ny>=SIZE) block++;
+
+  nx=x-dx; ny=y-dy;
+  while(nx>=0&&nx<SIZE&&ny>=0&&ny<SIZE){
+    if(b[ny][nx]===player) cnt++;
+    else if(b[ny][nx]===3-player){ block++; break; }
+    else { space=true; break; }
+    nx-=dx; ny-=dy;
+  }
+  if(nx<0||nx>=SIZE||ny<0||ny>=SIZE) block++;
+
+  let s=0;
+  if(cnt===4) s = block?8000:20000;
+  else if(cnt===3) s = block?300:3500;
+  else if(cnt===2) s = block?30:400;
+  else if(cnt===1) s=15;
+  if(space) s /=1.3;
+  return s;
+}
+
+// 极小极大核心递归算法
+function minimax(depth, isMax, alpha, beta){
+  // 终止条件：胜负 or 达到搜索深度
+  for(let y=0;y<SIZE;y++){
+    for(let x=0;x<SIZE;x++){
+      if(board[y][x]===2 && checkWin(x,y,2,board)) return 100000-depth;
+      if(board[y][x]===1 && checkWin(x,y,1,board)) return -100000+depth;
+    }
+  }
+  if(depth === MAX_DEPTH) return evalBoard(board);
+
+  let validPoints = getValidPoints();
+  if(isMax){
+    // AI回合：最大化分数
+    let maxVal = -Infinity;
+    for(let p of validPoints){
+      let {x,y} = p;
+      board[y][x] = 2;
+      let val = minimax(depth+1, false, alpha, beta);
+      board[y][x] = 0;
+      maxVal = Math.max(maxVal, val);
+      alpha = Math.max(alpha, val);
+      if(beta <= alpha) return maxVal; // αβ剪枝
+    }
+    return maxVal;
+  }else{
+    // 模拟玩家回合：最小化AI分数
+    let minVal = Infinity;
+    for(let p of validPoints){
+      let {x,y} = p;
+      board[y][x] = 1;
+      let val = minimax(depth+1, true, alpha, beta);
+      board[y][x] = 0;
+      minVal = Math.min(minVal, val);
+      beta = Math.min(beta, val);
+      if(beta <= alpha) return minVal;
+    }
+    return minVal;
+  }
+}
+
+// AI寻找最优落子
+function aiMinimaxDrop(){
+  let bestX=0,bestY=0;
+  let bestScore = -Infinity;
+  let validPoints = getValidPoints();
+
+  for(let p of validPoints){
+    let {x,y} = p;
+    board[y][x] = 2;
+    let score = minimax(1, false, -Infinity, Infinity);
+    board[y][x] = 0;
+    if(score > bestScore){
+      bestScore = score;
+      bestX = x;
+      bestY = y;
+    }
+  }
+
+  board[bestY][bestX] = 2;
+  renderBoard();
+  if(checkWin(bestX,bestY,2)){
+    gameOver = true;
+    document.getElementById('tip').innerText = '😢 AI白棋获胜！';
+  }
+}
+
+// 重置游戏
+function resetGame(){
+  board = Array(SIZE).fill().map(()=>Array(SIZE).fill(0));
+  gameOver = false;
+  document.getElementById('tip').innerText = '';
+  renderBoard();
+}
+
+renderBoard();
+</script>
 </body>
 </html>
